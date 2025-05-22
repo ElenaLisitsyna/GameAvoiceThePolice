@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 
 # Инициализация Pygame
 pygame.init()
@@ -12,31 +13,31 @@ FPS = 60
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
-BLUE = (0, 0, 255)  # Цвет для первого игрокая
+BLUE = (0, 0, 255)  # Цвет для первого игрока
 LIGHT_BLUE = (173, 216, 230)  # Цвет для второго игрока
 TRANSLUCENT_RED = (255, 0, 0, 128)  # Полупрозрачный красный
 GRAY = (169, 169, 169)  # Серый цвет фона для завершения игры
 BROWN = (128, 0, 0)  # Бордовый цвет
 
-# Загружаем изображение с обработкой ошибок
+# Загружаем изображение
 def load_image(name, size=(50, 100)):
     try:
         image = pygame.image.load(name)
-        return pygame.transform.scale(image, size)
+        return pygame.transform.scale(image, size) #изменяет размер изображения
     except pygame.error as e:
         print(f"Ошибка загрузки изображения {name}: {e}")
         return pygame.Surface(size)
 
 # Базовый класс для всех объектов
 class GameObject:
-    def __init__(self, image, x, y):
+    def __init__(self, image, x, y): #конструктор
         self.image = image
         self.rect = self.image.get_rect(center=(x, y))
 
     def draw(self, surface):
         surface.blit(self.image, self.rect)
 
-# Абстрактный класс для движущихся объектов
+#наследник предыдущего класса
 class MovableObject(GameObject):
     def move(self, dx, dy):
         self.rect.x += dx
@@ -47,12 +48,12 @@ class Player(MovableObject):
     def __init__(self, image, start_x, start_y, name, color):
         super().__init__(image, start_x, start_y)
         self.horizontal_speed = 5
-        self.vertical_speed = 5
+        self.vertical_speed = 7
         self._lives = 5
         self.name = name
         self.color = color
 
-    @property
+    @property #доступно только для чтения
     def lives(self):
         return self._lives
 
@@ -78,12 +79,47 @@ class Player(MovableObject):
 
 # Класс препятствий
 class Obstacle(MovableObject):
+    _BASE_SPEED = 3.0
+    _MAX_SPEED = 9.0
+    _ACCELERATION_RATE = 0.04 # Скорость увеличения скорости после начального периода
+
+    _current_speed = _BASE_SPEED
+    _game_frames = 0
+    _INITIAL_PERIOD = 7 * FPS  # 7 секунд постоянной скорости
+
     def __init__(self):
         super().__init__(load_image("obstacle_car.png", size=(40, 80)), random.randint(0, WIDTH - 40), 0)
-        self.speed = 3
+        self.speed = Obstacle._current_speed
+
+    @classmethod
+    def update_global_speed(cls):
+        cls._game_frames += 1
+
+        # Первые секунды - постоянная скорость
+        if cls._game_frames < cls._INITIAL_PERIOD:
+            cls._current_speed = cls._BASE_SPEED
+        # После этих секунд - плавное ускорение
+        else:
+            # Вычисляем насколько давно прошли начальные 7 секунд
+            acceleration_frames = cls._game_frames - cls._INITIAL_PERIOD
+
+            cls._current_speed = min(
+                cls._MAX_SPEED,
+                cls._BASE_SPEED + acceleration_frames * cls._ACCELERATION_RATE / FPS
+            )
 
     def update(self):
+        self.speed = Obstacle._current_speed
         self.move(0, self.speed)
+
+    @classmethod
+    def reset_speed(cls):
+        cls._current_speed = cls._BASE_SPEED
+        cls._game_frames = 0
+
+    @classmethod
+    def get_current_speed(cls):
+        return cls._current_speed
 
 # Класс бонусов
 class Bonus(MovableObject):
@@ -99,7 +135,7 @@ class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Avoid the Police!")
-        self.clock = pygame.time.Clock()
+        self.clock = pygame.time.Clock() # для управления частотой кадров
 
         # Загружаем фон
         self.background = load_image("background.png", size=(WIDTH, HEIGHT))
@@ -109,10 +145,10 @@ class Game:
         self.player2 = Player(load_image("player2_car.png", size=(40, 80)), WIDTH // 2 + 60, HEIGHT - 120, "Игрок 2", LIGHT_BLUE)
 
         self.obstacles = []
-        self.bonuses = []  # Список бонусов
-        self.score = 0
+        self.bonuses = []
+        self.score = 0 #начальный счёт
         self.running = True
-        self.collision_effect_duration = 0  # Время полупрозрачного эффекта
+        self.collision_effect_duration = 0
         self.collision_effect_max_duration = 20  # Количество кадров для эффекта
         self.collision_color = None  # Цвет столкновения
 
@@ -125,7 +161,7 @@ class Game:
             self.bonuses.append(Bonus())
 
     def handle_collisions(self):
-        bonuses_to_remove = []  # Создаем список для удаления бонусов
+        bonuses_to_remove = []
         for obstacle in self.obstacles:
             if self.player1.rect.colliderect(obstacle.rect):
                 self.player1.lose_life()
@@ -145,7 +181,7 @@ class Game:
 
         # Проверка столкновений с бонусами
         for bonus in self.bonuses[:]:  # Проходим в копии списка
-            if self.player1.rect.colliderect(bonus.rect):
+            if self.player1.rect.colliderect(bonus.rect): #colliderect - метод, проверяющий, есть ли перекрытие между прямоугольниками
                 self.player1._lives += 1
                 bonuses_to_remove.append(bonus)
 
@@ -190,9 +226,10 @@ class Game:
         self.player1.reset()
         self.player2.reset()
         self.obstacles.clear()
-        self.bonuses.clear()  # Очистка бонусов
+        self.bonuses.clear()
         self.score = 0
         self.running = True
+        Obstacle.reset_speed()
 
     def run(self):
         while self.running:
@@ -200,7 +237,7 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False
 
-            keys = pygame.key.get_pressed()
+            keys = pygame.key.get_pressed() #массив, в котором хранится информация о нажатых клавишах
             if keys[pygame.K_a]:
                 self.player1.move(-self.player1.horizontal_speed, 0)
             if keys[pygame.K_d]:
@@ -220,9 +257,9 @@ class Game:
                 self.player2.move(0, self.player2.vertical_speed)
 
             self.spawn_obstacle()
-            self.spawn_bonus()  # Спавн бонусов
+            self.spawn_bonus()
             for obstacle in self.obstacles:
-                obstacle.update()
+                obstacle.update() #обновление позиции
                 if obstacle.rect.y > HEIGHT:
                     self.obstacles.remove(obstacle)
                     self.score += 1
@@ -233,6 +270,9 @@ class Game:
                     self.bonuses.remove(bonus)  # Удаляем бонус, если он вышел за пределы экрана
 
             self.handle_collisions()
+
+            # Обновляем глобальную скорость для всех препятствий
+            Obstacle.update_global_speed()
 
             # Отрисовка
             self.screen.blit(self.background, (0, 0))  # Рисуем фон
@@ -246,19 +286,21 @@ class Game:
             for obstacle in self.obstacles:
                 obstacle.draw(self.screen)
             for bonus in self.bonuses:
-                bonus.draw(self.screen)  # Рисуем бонусы
+                bonus.draw(self.screen)
 
             # Отображение счета и жизней
             font = pygame.font.Font(None, 36)
             score_text = font.render(f"Счет: {self.score}", True, BLACK)
             lives_text1 = font.render(f"Жизни Игрока 1: {self.player1.lives}", True, BLUE)
             lives_text2 = font.render(f"Жизни Игрока 2: {self.player2.lives}", True, LIGHT_BLUE)
+            speed_text = font.render(f"Скорость полиции: {Obstacle.get_current_speed():.1f}", True, GRAY)
 
             self.screen.blit(score_text, (10, 10))
             self.screen.blit(lives_text1, (10, 50))
             self.screen.blit(lives_text2, (10, 90))
+            self.screen.blit(speed_text, (WIDTH - 250, 10))  # Правая верхняя часть экрана
 
-            pygame.display.flip()
+            pygame.display.flip() #Обновляет изображение на экране
             self.clock.tick(FPS)
 
         pygame.quit()
